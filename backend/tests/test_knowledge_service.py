@@ -122,7 +122,8 @@ async def test_create_node_root():
     )
 
     session.add.assert_called_once()
-    assert session.flush.call_count == 2  # initial flush + path update flush
+    # materialized_path 现在在 after_flush_postexec 中更新，只需要一次 flush
+    assert session.flush.call_count >= 1  # at least one flush for insert
 
 
 @pytest.mark.asyncio

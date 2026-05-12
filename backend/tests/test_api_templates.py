@@ -74,9 +74,7 @@ async def test_get_template(client: AsyncClient):
 async def test_get_template_not_found(client: AsyncClient):
     """测试获取不存在的模板."""
     response = await client.get("/api/v1/templates/99999")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 404
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -104,9 +102,7 @@ async def test_update_template_not_found(client: AsyncClient):
         "/api/v1/templates/99999",
         json={"name": "不存在"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 404
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -132,9 +128,7 @@ async def test_delete_template(client: AsyncClient):
 async def test_delete_template_not_found(client: AsyncClient):
     """测试删除不存在的模板."""
     response = await client.delete("/api/v1/templates/99999")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 404
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

@@ -85,9 +85,7 @@ async def test_get_paper(client: AsyncClient, db_session):
 async def test_get_paper_not_found(client: AsyncClient):
     """测试获取不存在的试卷."""
     response = await client.get("/api/v1/papers/99999")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 404
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -203,9 +201,7 @@ async def test_review_paper_not_found(client: AsyncClient):
         "/api/v1/papers/99999/review",
         json={"status": "approved"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 404
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

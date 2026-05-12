@@ -35,21 +35,22 @@ async def get_subtree(
     """获取指定节点及其子树."""
     service = KnowledgeService(db)
     node = await service.get_node(node_id)
-
-    # Eager-load children with their own children in a single query
-    stmt = (
-        select(KnowledgeNode)
-        .where(KnowledgeNode.parent_id == node_id)
-        .options(selectinload(KnowledgeNode.children))
-        .order_by(KnowledgeNode.sort_order)
-    )
-    result = await db.execute(stmt)
-    children = list(result.scalars().all())
+    
+    # 显式加载 children 关系，避免 Pydantic 验证时的懒加载问题
+    await db.refresh(node, ["children"])
+    
+    # 递归预加载所有子孙节点
+    async def load_children_recursive(n: KnowledgeNode):
+        await db.refresh(n, ["children"])
+        for child in n.children:
+            await load_children_recursive(child)
+    
+    await load_children_recursive(node)
 
     return UnifiedResponse(
         data={
             "node": KnowledgeNodeRead.model_validate(node),
-            "children": [KnowledgeNodeRead.model_validate(c) for c in children],
+            "children": [KnowledgeNodeRead.model_validate(c) for c in node.children],
         }
     )
 

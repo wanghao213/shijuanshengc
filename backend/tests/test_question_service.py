@@ -183,7 +183,18 @@ async def test_batch_import_success():
     session.add = MagicMock()
     session.flush = AsyncMock()
     session.commit = AsyncMock()
-
+    
+    # Mock begin_nested to return an async context manager
+    async def mock_begin_nested():
+        class Savepoint:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return False
+        return Savepoint()
+    
+    session.begin_nested = mock_begin_nested
+    
     svc = QuestionService(session)
     data = QuestionCreate(
         content_latex="$a+b$",
@@ -192,7 +203,7 @@ async def test_batch_import_success():
         difficulty=1.5,
     )
     result = await svc.batch_import([data, data])
-
+    
     assert result["created"] == 2
     assert result["failed"] == 0
     assert result["errors"] == []
@@ -216,6 +227,17 @@ async def test_batch_import_partial_failure():
 
     session.flush = AsyncMock(side_effect=flush_side_effect)
     session.commit = AsyncMock()
+    
+    # Mock begin_nested to return an async context manager
+    async def mock_begin_nested():
+        class Savepoint:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return False
+        return Savepoint()
+    
+    session.begin_nested = mock_begin_nested
 
     svc = QuestionService(session)
     data = QuestionCreate(

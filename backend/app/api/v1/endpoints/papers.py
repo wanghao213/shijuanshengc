@@ -36,6 +36,8 @@ async def get_paper(
     """获取试卷详情."""
     service = PaperService(db)
     paper = await service.get_paper(paper_id)
+    if not paper:
+        return UnifiedResponse(code=404, message="试卷不存在")
     return UnifiedResponse(data=PaperRead.model_validate(paper))
 
 
@@ -110,6 +112,9 @@ async def review_paper(
 ):
     """审核试卷."""
     service = PaperService(db)
+    paper = await service.get_paper(paper_id)
+    if not paper:
+        return UnifiedResponse(code=404, message="试卷不存在")
     await service.review_paper(paper_id, data.status)
     return UnifiedResponse(message="审核完成")
 

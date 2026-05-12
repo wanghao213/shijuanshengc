@@ -34,6 +34,8 @@ async def get_template(
     """获取模板详情."""
     service = TemplateService(db)
     template = await service.get_template(template_id)
+    if not template:
+        return UnifiedResponse(code=404, message="模板不存在")
     return UnifiedResponse(data=TemplateRead.model_validate(template))
 
 
@@ -57,6 +59,8 @@ async def update_template(
     """更新模板."""
     service = TemplateService(db)
     template = await service.update_template(template_id, data)
+    if not template:
+        return UnifiedResponse(code=404, message="模板不存在")
     return UnifiedResponse(data=TemplateRead.model_validate(template))
 
 
@@ -67,7 +71,9 @@ async def delete_template(
 ):
     """删除模板."""
     service = TemplateService(db)
-    await service.delete_template(template_id)
+    deleted = await service.delete_template(template_id)
+    if not deleted:
+        return UnifiedResponse(code=404, message="模板不存在")
     return UnifiedResponse(message="删除成功")
 
 
