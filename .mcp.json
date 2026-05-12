@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "ruflo": {
+      "command": "ruflo",
+      "args": ["mcp", "start"],
+      "env": {
+        "NODE_NO_WARNINGS": "1",
+        "CLAUDE_FLOW_V3_ENABLED": "true",
+        "CLAUDE_FLOW_HOOKS_ENABLED": "true"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\王浩\\Desktop"]
+    }
+  }
+}

@@ -1,7 +1,9 @@
 """Generator Agent - 生成新题目."""
 
+from typing import Any
 
 import structlog
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
@@ -32,7 +34,7 @@ class GeneratorAgent(BaseAgent):
         custom_params = context.get("custom_params", {})
         session: AsyncSession | None = context.get("session")
 
-        generated_questions = []
+        generated_questions: list[dict[str, Any]] = []
 
         for section in sections:
             for gap in section.get("gaps", []):
@@ -47,7 +49,9 @@ class GeneratorAgent(BaseAgent):
 
         # 将生成的题目存入数据库
         if session and generated_questions:
-            persisted = await self._persist_questions(session, generated_questions, template)
+            persisted = await self._persist_questions(
+                session, generated_questions, template
+            )
             return {"generated_questions": persisted}
 
         return {"generated_questions": generated_questions}
@@ -57,7 +61,7 @@ class GeneratorAgent(BaseAgent):
         gap: dict,
         section_name: str,
         template: dict,
-        retrieval_service,
+        retrieval_service: Any,
         allow_ai: bool,
     ) -> list[dict]:
         """为单个缺口生成题目."""
@@ -72,7 +76,7 @@ class GeneratorAgent(BaseAgent):
         knowledge_points = gap.get("knowledge_points", ["数学综合"])
 
         # 检索参考题
-        reference_examples = []
+        reference_examples: list[dict] = []
         for kp in knowledge_points[:3]:
             examples = await retrieval_service.hybrid_search(
                 query_text=kp,
@@ -99,12 +103,20 @@ class GeneratorAgent(BaseAgent):
         )
 
         if "error" in response:
-            return []
+            logger.error(
+                "gap_generation_failed",
+                section_name=section_name,
+                gap_type=question_type,
+                error=response["error"],
+            )
+            raise RuntimeError(
+                f"题目生成失败 [{section_name}/{question_type}]: {response['error']}"
+            )
 
         questions = response.get("questions", [])
 
         # 验证 LaTeX
-        validated = []
+        validated: list[dict] = []
         for q in questions:
             content = q.get("content_latex", "")
             result = validate_latex(content)
@@ -112,7 +124,9 @@ class GeneratorAgent(BaseAgent):
                 q["content_latex"] = result.cleaned_latex
                 q["is_ai_generated"] = True
                 q["review_status"] = "pending"
-                q["difficulty"] = q.get("difficulty_self_assessment", target_difficulty)
+                q["difficulty"] = q.get(
+                    "difficulty_self_assessment", target_difficulty
+                )
                 q["knowledge_points_str"] = knowledge_points
                 validated.append(q)
             else:
@@ -131,7 +145,7 @@ class GeneratorAgent(BaseAgent):
         template: dict,
     ) -> list[dict]:
         """将生成的题目存入数据库."""
-        persisted = []
+        persisted: list[dict] = []
 
         for q_data in questions:
             try:
@@ -172,9 +186,24 @@ class GeneratorAgent(BaseAgent):
                     question_type=q_data.get("question_type"),
                 )
 
-            except Exception as e:
-                logger.error("question_persist_failed", error=str(e), q_data=str(q_data)[:200])
-                # 即使入库失败，也保留生成的数据
+            except IntegrityError as e:
+                # 唯一约束冲突（如重复题目）
+                logger.warning(
+                    "question_persist_integrity_error",
+                    error=str(e),
+                    q_content=q_data.get("content_latex", "")[:100],
+                )
+                persisted.append(q_data)
+
+            except SQLAlchemyError as e:
+                # 数据库层面错误
+                logger.error(
+                    "question_persist_db_error",
+                    error=str(e),
+                    q_data=str(q_data)[:200],
+                )
+                # 保留生成的数据，但标记未入库
+                q_data["db_persisted"] = False
                 persisted.append(q_data)
 
         await session.flush()

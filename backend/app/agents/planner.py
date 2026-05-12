@@ -1,12 +1,18 @@
 """Planner Agent - 制定选题计划."""
 
 import json
+import re
+from typing import Any
 
 import structlog
 
 from app.agents.base import BaseAgent
 
 logger = structlog.get_logger()
+
+# 计划中每个 section 必须包含的字段
+_REQUIRED_SECTION_FIELDS = {"section_name", "section_index", "need_count"}
+_REQUIRED_PLAN_FIELDS = {"sections_plan", "total_questions"}
 
 
 class PlannerAgent(BaseAgent):
@@ -83,7 +89,11 @@ class PlannerAgent(BaseAgent):
 
 请先使用工具获取必要的信息，然后返回严格 JSON 格式的选题计划。"""
 
-    def __init__(self, knowledge_tree: list | None = None, question_stats: dict | None = None):
+    def __init__(
+        self,
+        knowledge_tree: list | None = None,
+        question_stats: dict | None = None,
+    ):
         """初始化，可预注入知识树和题库统计数据."""
         self._knowledge_tree = knowledge_tree or []
         self._question_stats = question_stats or {}
@@ -104,22 +114,35 @@ class PlannerAgent(BaseAgent):
         )
 
         # 解析 JSON 响应
-        try:
-            plan = json.loads(result_text)
-        except json.JSONDecodeError:
-            # 尝试从文本中提取 JSON
-            plan = self._extract_json_from_text(result_text)
-            if not plan:
-                logger.error("planner_json_parse_error", content=result_text[:300])
-                plan = self._build_fallback_plan(template)
+        plan = self._parse_plan(result_text)
+        if not plan:
+            logger.error("planner_fallback_used", content=result_text[:300])
+            plan = self._build_fallback_plan(template)
 
         return plan
+
+    def _parse_plan(self, text: str) -> dict | None:
+        """解析 LLM 返回的计划文本为 dict，失败返回 None."""
+        # 尝试直接解析
+        try:
+            plan = json.loads(text)
+            if self._validate_plan_structure(plan):
+                return plan
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试从文本中提取 JSON
+        plan = self._extract_json_from_text(text)
+        if plan and self._validate_plan_structure(plan):
+            return plan
+
+        return None
 
     async def execute_tool(self, tool_name: str, arguments: dict) -> dict:
         """执行 Planner Agent 的工具调用."""
         if tool_name == "query_knowledge_tree":
             return self._query_knowledge_tree(arguments)
-        elif tool_name == "query_question_stats":
+        if tool_name == "query_question_stats":
             return self._query_question_stats(arguments)
         return {"error": f"未知工具: {tool_name}"}
 
@@ -198,29 +221,57 @@ class PlannerAgent(BaseAgent):
         return "\n".join(lines) if lines else "无"
 
     def _extract_json_from_text(self, text: str) -> dict | None:
-        """从文本中提取 JSON."""
-        import re
-
-        json_match = re.search(r"\{[\s\S]*\}", text)
-        if json_match:
+        """从文本中提取 JSON，支持 markdown 代码块和嵌套结构."""
+        # 优先尝试提取 markdown 代码块中的 JSON
+        code_block_pattern = r"```(?:json)?\s*\n?([\s\S]*?)\n?\s*```"
+        code_match = re.search(code_block_pattern, text)
+        if code_match:
             try:
-                return json.loads(json_match.group())
+                return json.loads(code_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 回退：用 rfind 找最后一个 }，配合第一个 { 提取最外层 JSON
+        first_brace = text.find("{")
+        last_brace = text.rfind("}")
+        if first_brace != -1 and last_brace > first_brace:
+            try:
+                return json.loads(text[first_brace : last_brace + 1])
             except json.JSONDecodeError:
                 pass
         return None
 
+    def _validate_plan_structure(self, plan: dict) -> bool:
+        """校验计划是否包含必要字段."""
+        if not isinstance(plan, dict):
+            return False
+        if not _REQUIRED_PLAN_FIELDS.issubset(plan.keys()):
+            return False
+        sections = plan.get("sections_plan", [])
+        if not isinstance(sections, list) or len(sections) == 0:
+            return False
+        for sec in sections:
+            if not isinstance(sec, dict):
+                return False
+            if not _REQUIRED_SECTION_FIELDS.issubset(sec.keys()):
+                return False
+        return True
+
     def _build_fallback_plan(self, template: dict) -> dict:
-        """构建回退选题计划."""
+        """构建回退选题计划，使用模板的 difficulty_range."""
         structure = template.get("structure", {})
         sections = structure.get("sections", [])
 
         sections_plan = []
         for i, s in enumerate(sections):
+            diff_range = s.get("difficulty_range", [1, 5])
             sections_plan.append({
                 "section_name": s.get("name", f"第{i+1}部分"),
                 "section_index": i,
                 "need_count": s.get("count", 0),
-                "difficulty_distribution": [3] * s.get("count", 0),
+                "difficulty_distribution": [
+                    round(sum(diff_range) / 2)
+                ] * s.get("count", 0),
                 "knowledge_allocation": {},
                 "estimated_from_bank": max(0, s.get("count", 0) - 2),
                 "estimated_ai_gen": min(2, s.get("count", 0)),
@@ -229,6 +280,13 @@ class PlannerAgent(BaseAgent):
         return {
             "sections_plan": sections_plan,
             "total_questions": sum(s.get("count", 0) for s in sections),
-            "estimated_difficulty": 3.0,
+            "estimated_difficulty": round(
+                sum(
+                    sum(s.get("difficulty_range", [1, 5])) / 2
+                    for s in sections
+                )
+                / max(len(sections), 1),
+                1,
+            ),
             "knowledge_coverage_target": 0.7,
         }

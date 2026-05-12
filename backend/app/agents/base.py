@@ -1,13 +1,19 @@
 """Agent 基类."""
 
+import asyncio
 import json
 from abc import ABC, abstractmethod
+from typing import Any, ClassVar
 
 import structlog
 
 from app.core.llm_gateway import LLMResponse, chat, structured_chat
 
 logger = structlog.get_logger()
+
+# 工具执行重试配置
+_TOOL_MAX_RETRIES = 2
+_TOOL_RETRY_BASE_DELAY = 0.5
 
 
 class BaseAgent(ABC):
@@ -20,7 +26,7 @@ class BaseAgent(ABC):
     """
 
     # 子类可覆盖，定义该 Agent 可用的工具
-    tools: list[dict] = []
+    tools: ClassVar[list[dict[str, Any]]] = []
 
     @abstractmethod
     async def run(self, context: dict) -> dict:
@@ -83,6 +89,7 @@ class BaseAgent(ABC):
             {"role": "user", "content": user_message},
         ]
 
+        last_content = ""
         for round_num in range(max_rounds):
             response = await chat(
                 messages=messages,
@@ -90,18 +97,22 @@ class BaseAgent(ABC):
                 temperature=0.3,
             )
 
-            # 检查是否有 tool_use
-            content = response.content
-            if not content:
+            content = response.content or ""
+            if content:
+                last_content = content
+
+            # 空响应但可能有 tool_calls（某些 LLM 在 tool_use 时 content 为空）
+            if not self._has_tool_calls(response):
+                if content:
+                    return content
+                # 空响应且无 tool_calls — 无法继续
+                logger.warning(
+                    "agent_empty_response",
+                    agent=self.__class__.__name__,
+                    round=round_num,
+                )
                 break
 
-            # LiteLLM 返回的 content 在有 tool_use 时可能是特殊格式
-            # 需要解析 assistant message 的完整结构
-            # 这里简化处理：如果 content 是纯文本且不含 tool_use 标记，直接返回
-            if not self._has_tool_calls(response):
-                return content
-
-            # 处理 tool calls
             tool_calls = self._extract_tool_calls(response)
             if not tool_calls:
                 return content
@@ -112,7 +123,7 @@ class BaseAgent(ABC):
                 "content": content,
             })
 
-            # 执行每个 tool call 并添加结果
+            # 执行每个 tool call 并添加结果（带重试）
             for tool_call in tool_calls:
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("arguments", {})
@@ -126,7 +137,7 @@ class BaseAgent(ABC):
                     round=round_num,
                 )
 
-                result = await self.execute_tool(tool_name, tool_args)
+                result = await self._execute_tool_with_retry(tool_name, tool_args)
 
                 messages.append({
                     "role": "tool",
@@ -134,12 +145,51 @@ class BaseAgent(ABC):
                     "content": json.dumps(result, ensure_ascii=False),
                 })
 
-        logger.warning("agent_tool_loop_max_rounds", agent=self.__class__.__name__, rounds=max_rounds)
-        return content if content else ""
+        logger.warning(
+            "agent_tool_loop_max_rounds",
+            agent=self.__class__.__name__,
+            rounds=max_rounds,
+        )
+        return last_content
+
+    async def _execute_tool_with_retry(
+        self, tool_name: str, arguments: dict
+    ) -> dict:
+        """执行工具调用，带指数退避重试（仅针对瞬时错误）."""
+        last_error: Exception | None = None
+        for attempt in range(_TOOL_MAX_RETRIES + 1):
+            try:
+                return await self.execute_tool(tool_name, arguments)
+            except (ConnectionError, TimeoutError, OSError) as e:
+                last_error = e
+                if attempt < _TOOL_MAX_RETRIES:
+                    delay = _TOOL_RETRY_BASE_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "tool_transient_error",
+                        tool=tool_name,
+                        attempt=attempt + 1,
+                        delay=delay,
+                        error=str(e),
+                    )
+                    await asyncio.sleep(delay)
+            except Exception:
+                # 非瞬时错误不做重试，直接抛出
+                raise
+        # 重试耗尽，返回错误而非抛出异常（与原有行为一致）
+        logger.error(
+            "tool_retry_exhausted",
+            tool=tool_name,
+            error=str(last_error),
+        )
+        return {"error": f"工具 {tool_name} 执行失败: {last_error}"}
 
     async def execute_tool(self, tool_name: str, arguments: dict) -> dict:
         """执行工具调用. 子类应覆盖此方法以实现具体工具逻辑."""
-        logger.warning("unhandled_tool_call", tool=tool_name, agent=self.__class__.__name__)
+        logger.warning(
+            "unhandled_tool_call",
+            tool=tool_name,
+            agent=self.__class__.__name__,
+        )
         return {"error": f"未实现的工具: {tool_name}"}
 
     def _has_tool_calls(self, response: LLMResponse) -> bool:
@@ -154,22 +204,21 @@ class BaseAgent(ABC):
         if hasattr(response, "tool_calls") and response.tool_calls:
             return True
 
-        content = response.content or ""
-        if not content.strip():
+        content = response.content
+        if not isinstance(content, str) or not content.strip():
             return False
         try:
             data = json.loads(content)
-            if isinstance(data, dict):
-                if "tool_calls" in data:
-                    return True
-                if "name" in data and ("arguments" in data or "input" in data):
-                    return True
-            if isinstance(data, list) and any(
-                isinstance(item, dict) and "name" in item for item in data
-            ):
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+        if isinstance(data, dict):
+            if "tool_calls" in data:
                 return True
-        except json.JSONDecodeError:
-            pass
+            if "name" in data and ("arguments" in data or "input" in data):
+                return True
+        if isinstance(data, list):
+            return any(isinstance(item, dict) and "name" in item for item in data)
         return False
 
     def _extract_tool_calls(self, response: LLMResponse) -> list[dict]:
@@ -182,29 +231,49 @@ class BaseAgent(ABC):
         """
         # 检查 LiteLLM 标准 tool_calls 属性
         if hasattr(response, "tool_calls") and response.tool_calls:
-            return [
-                {
-                    "id": tc.id or "",
-                    "name": tc.function.name if hasattr(tc, "function") else tc.get("name", ""),
-                    "arguments": (
-                        json.loads(tc.function.arguments)
-                        if hasattr(tc, "function") and isinstance(tc.function.arguments, str)
-                        else tc.get("arguments", {})
-                    ),
-                }
-                for tc in response.tool_calls
-            ]
+            calls: list[dict] = []
+            for tc in response.tool_calls:
+                try:
+                    name = (
+                        tc.function.name
+                        if hasattr(tc, "function")
+                        else tc.get("name", "")
+                    )
+                    raw_args = (
+                        tc.function.arguments
+                        if hasattr(tc, "function")
+                        else tc.get("arguments", "{}")
+                    )
+                    args = (
+                        json.loads(raw_args)
+                        if isinstance(raw_args, str)
+                        else raw_args
+                        if isinstance(raw_args, dict)
+                        else {}
+                    )
+                    calls.append({"id": tc.id or "", "name": name, "arguments": args})
+                except (AttributeError, json.JSONDecodeError) as e:
+                    logger.warning("tool_call_parse_error", error=str(e))
+            return calls
 
         content = response.content or ""
         try:
             data = json.loads(content)
-            if isinstance(data, dict):
-                if "tool_calls" in data:
-                    return data["tool_calls"]
-                if "name" in data and ("arguments" in data or "input" in data):
-                    return [{"id": "", "name": data["name"], "arguments": data.get("arguments", data.get("input", {}))}]
-            if isinstance(data, list):
-                return [item for item in data if isinstance(item, dict) and "name" in item]
-        except json.JSONDecodeError:
-            pass
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+        if isinstance(data, dict):
+            if "tool_calls" in data:
+                return data["tool_calls"]
+            if "name" in data and ("arguments" in data or "input" in data):
+                return [{
+                    "id": "",
+                    "name": data["name"],
+                    "arguments": data.get("arguments", data.get("input", {})),
+                }]
+        if isinstance(data, list):
+            return [
+                item for item in data
+                if isinstance(item, dict) and "name" in item
+            ]
         return []

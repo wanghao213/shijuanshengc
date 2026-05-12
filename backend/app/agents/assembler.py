@@ -1,6 +1,7 @@
 """Assembler Agent - 组装试卷."""
 
 from datetime import datetime
+from typing import Any
 
 import structlog
 
@@ -30,6 +31,9 @@ class AssemblerAgent(BaseAgent):
 
         # 合并所有题目
         all_questions = self._merge_questions(sections, generated_questions)
+
+        # 分值校验
+        self._validate_scores(all_questions, template)
 
         # 生成标题
         title = custom_params.get("title_override") or self._generate_title(template)
@@ -75,22 +79,27 @@ class AssemblerAgent(BaseAgent):
 
     def _merge_questions(self, sections: list, generated: list) -> list:
         """合并题库题目和 AI 生成题目."""
-        result = []
-        gen_by_type = {}
+        result: list[dict[str, Any]] = []
+        gen_by_type: dict[str, list] = {}
         for q in generated:
             qtype = q.get("question_type", "unknown")
             gen_by_type.setdefault(qtype, []).append(q)
 
         for section in sections:
-            section_questions = section.get("selected", [])
-            # 填充缺口
+            section_questions = list(section.get("selected", []))
+            # 填充缺口：使用索引消耗已使用的题目，避免修改迭代中的列表
             for gap in section.get("gaps", []):
                 gap_type = gap.get("type", "")
                 gap_count = gap.get("count", 0)
                 available = gen_by_type.get(gap_type, [])
-                for q in available[:gap_count]:
+                consumed = 0
+                for i, q in enumerate(available):
+                    if consumed >= gap_count:
+                        break
                     section_questions.append(q)
-                    available.remove(q)
+                    consumed += 1
+                # 移除已消耗的题目
+                gen_by_type[gap_type] = available[consumed:]
 
             result.append({
                 "section_name": section.get("section_name", ""),
@@ -98,6 +107,24 @@ class AssemblerAgent(BaseAgent):
             })
 
         return result
+
+    def _validate_scores(self, sections: list, template: dict) -> None:
+        """校验各 section 分值总和是否与模板匹配."""
+        expected_total = template.get("total_score", 0)
+        if not expected_total:
+            return
+
+        actual_total = 0
+        for section in sections:
+            for q in section.get("questions", []):
+                actual_total += q.get("score", 0)
+
+        if abs(actual_total - expected_total) > 0.01:
+            logger.warning(
+                "score_mismatch",
+                expected=expected_total,
+                actual=actual_total,
+            )
 
     def _generate_title(self, template: dict) -> str:
         """生成试卷标题."""
@@ -109,7 +136,7 @@ class AssemblerAgent(BaseAgent):
 
     def _calculate_stats(self, sections: list, template: dict) -> dict:
         """计算试卷统计."""
-        all_questions = []
+        all_questions: list[dict] = []
         for section in sections:
             all_questions.extend(section.get("questions", []))
 
@@ -124,7 +151,7 @@ class AssemblerAgent(BaseAgent):
         avg_difficulty = sum(difficulties) / len(difficulties)
 
         # 知识点覆盖
-        all_kp = set()
+        all_kp: set[str] = set()
         for q in all_questions:
             for kp in q.get("knowledge_points", []):
                 if isinstance(kp, str):
