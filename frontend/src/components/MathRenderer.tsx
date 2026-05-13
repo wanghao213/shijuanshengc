@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import katex from 'katex'
 
 interface MathRendererProps {
@@ -17,7 +17,37 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
-function MathRenderer({ content, displayMode = false, maxLength, className }: MathRendererProps) {
+// 使用缓存避免重复渲染相同的公式内容
+const formulaCache = new Map<string, string>()
+const MAX_CACHE_SIZE = 500
+
+function cachedRender(formula: string, displayMode: boolean): string {
+  const cacheKey = `${displayMode ? 'D' : 'I'}:${formula}`
+  
+  if (formulaCache.has(cacheKey)) {
+    return formulaCache.get(cacheKey)!
+  }
+  
+  let result: string
+  try {
+    result = katex.renderToString(formula, { displayMode, throwOnError: false })
+  } catch {
+    result = `<span style="color: gray; font-style: italic;">${escapeHtml(formula)}</span>`
+  }
+  
+  // 清理缓存防止内存泄漏
+  if (formulaCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = formulaCache.keys().next().value
+    if (firstKey) {
+      formulaCache.delete(firstKey)
+    }
+  }
+  
+  formulaCache.set(cacheKey, result)
+  return result
+}
+
+const MathRenderer = memo(({ content, displayMode = false, maxLength, className }: MathRendererProps) => {
   const rendered = useMemo(() => {
     if (!content) return ''
 
@@ -31,20 +61,12 @@ function MathRenderer({ content, displayMode = false, maxLength, className }: Ma
     try {
       // 处理行间公式 $$...$$
       text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
-        try {
-          return katex.renderToString(formula, { displayMode: true, throwOnError: false })
-        } catch {
-          return `<span style="color: gray; font-style: italic;">${escapeHtml(formula)}</span>`
-        }
+        return cachedRender(formula, true)
       })
 
       // 处理行内公式 $...$
       text = text.replace(/\$([^$]+?)\$/g, (_, formula) => {
-        try {
-          return katex.renderToString(formula, { displayMode: false, throwOnError: false })
-        } catch {
-          return `<span style="color: gray; font-style: italic;">${escapeHtml(formula)}</span>`
-        }
+        return cachedRender(formula, false)
       })
 
       return text
@@ -59,6 +81,12 @@ function MathRenderer({ content, displayMode = false, maxLength, className }: Ma
       dangerouslySetInnerHTML={{ __html: rendered }}
     />
   )
-}
+}, (prev, next) => {
+  // 自定义比较函数，避免不必要的重渲染
+  return prev.content === next.content && 
+         prev.displayMode === next.displayMode && 
+         prev.maxLength === next.maxLength &&
+         prev.className === next.className
+})
 
 export default MathRenderer

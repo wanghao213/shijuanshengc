@@ -1,4 +1,4 @@
-/** 题目卡片组件 */
+/** 题目卡片组件 - 使用细粒度状态优化 */
 
 import { Card, Tag, Space, Button, Popconfirm } from 'antd';
 import { EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
@@ -8,13 +8,14 @@ import DifficultyBadge from './DifficultyBadge';
 import KnowledgeTag from './KnowledgeTag';
 import { QUESTION_TYPE_LABELS, QUESTION_TYPE_COLORS } from '@/types/question';
 import type { Question, QuestionType } from '@/types/question';
+import { memo } from 'react';
 
 interface QuestionCardProps {
   question: Question;
   onDelete?: (id: number) => void;
 }
 
-export default function QuestionCard({ question, onDelete }: QuestionCardProps) {
+export default memo(function QuestionCard({ question, onDelete }: QuestionCardProps) {
   const navigate = useNavigate();
 
   return (
@@ -64,4 +65,7 @@ export default function QuestionCard({ question, onDelete }: QuestionCardProps) 
       </Space>
     </Card>
   );
-}
+}, (prev, next) => {
+  // 细粒度比较，只有当题目内容真正变化时才重渲染
+  return prev.question === next.question && prev.onDelete === next.onDelete;
+});

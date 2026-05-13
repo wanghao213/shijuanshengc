@@ -1,39 +1,13 @@
 ```
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
+# Dependencies
+node_modules/
+
+# Build outputs
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
-.env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
+build/
+.next/
+.nuxt/
+out/
 
 # Logs
 *.log
@@ -43,20 +17,36 @@ ENV/
 .env.local
 *.env.*
 
-# Coverage reports
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
 .coverage
-coverage/
 htmlcov/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pytest
+.coverage.*
 .pytest_cache/
+.mypy_cache/
 
-# Compressed files
+# Node.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Compression files
 *.zip
 *.gz
 *.tar
@@ -75,4 +65,57 @@ dmypy.json
 *.Z
 *.lz
 *.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Temporary folders
+tmp/
+temp/
+
+# Compiled JavaScript (if using TypeScript/Babel)
+lib/
+esm/
+cjs/
+
+# Rust/Cargo (if applicable)
+target/
+
+# Java/Maven/Gradle (if applicable)
+target/
+.gradle/
+*.class
+*.jar
+*.war
+
+# Go (if applicable)
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+
+# C/C++ (if applicable)
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.out
+*.obj
+
+# .NET (if applicable)
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+*.nupkg
+[Test]*.dll
 ```

@@ -1,6 +1,7 @@
-/** 试卷状态管理 */
+/** 试卷状态管理 - 支持细粒度订阅优化 */
 
 import { create } from 'zustand';
+import { shallow } from 'zustand/shallow';
 import type { Paper, PaperDetail } from '@/types/paper';
 import type { ResponseMeta } from '@/types/common';
 import * as api from '@/api/papers';
@@ -21,7 +22,7 @@ interface PaperState {
   exportDocx: (id: number, includeAnswers?: boolean) => Promise<Blob>;
 }
 
-export const usePaperStore = create<PaperState>((set) => ({
+export const usePaperStore = create<PaperState>((set, get) => ({
   papers: [],
   currentPaper: null,
   currentPaperDetail: null,
@@ -75,3 +76,9 @@ export const usePaperStore = create<PaperState>((set) => ({
     return await api.exportPaperDocx(id, includeAnswers);
   },
 }));
+
+// 导出细粒度选择器，避免不必要的重渲染
+export const useCurrentPaper = () => usePaperStore((state) => state.currentPaper, shallow);
+export const useCurrentPaperDetail = () => usePaperStore((state) => state.currentPaperDetail, shallow);
+export const usePaperLoading = () => usePaperStore((state) => state.loading);
+export const usePaperMeta = () => usePaperStore((state) => state.meta, shallow);

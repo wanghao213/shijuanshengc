@@ -1,6 +1,7 @@
-/** 题目状态管理 */
+/** 题目状态管理 - 支持细粒度订阅优化 */
 
 import { create } from 'zustand';
+import { shallow } from 'zustand/shallow';
 import type { Question } from '@/types/question';
 import type { ResponseMeta } from '@/types/common';
 import * as api from '@/api/questions';
@@ -83,3 +84,10 @@ export const useQuestionStore = create<QuestionState>((set) => ({
     }
   },
 }));
+
+// 导出细粒度选择器，避免不必要的重渲染
+export const useQuestions = () => useQuestionStore((state) => state.questions, shallow);
+export const useQuestionMeta = () => useQuestionStore((state) => state.meta, shallow);
+export const useQuestionLoading = () => useQuestionStore((state) => state.loading);
+export const useCurrentQuestion = () => useQuestionStore((state) => state.currentQuestion, shallow);
+export const useQuestionStats = () => useQuestionStore((state) => state.stats, shallow);
