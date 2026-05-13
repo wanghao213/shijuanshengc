@@ -30,9 +30,9 @@ const menuItems = [
     label: '题库管理',
   },
   {
-    key: '/questions/ocr',
+    key: '/questions/file-import',
     icon: <ScanOutlined />,
-    label: 'OCR导入',
+    label: '文件导入中心',
   },
   {
     key: '/templates',
