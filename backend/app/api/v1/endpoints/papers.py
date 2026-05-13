@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.dependencies import get_db
 from app.schemas.common import UnifiedResponse
 from app.schemas.paper import PaperRead, PaperReviewRequest
@@ -35,8 +36,11 @@ async def get_paper(
 ):
     """获取试卷详情."""
     service = PaperService(db)
-    paper = await service.get_paper(paper_id)
-    return UnifiedResponse(data=PaperRead.model_validate(paper))
+    try:
+        paper = await service.get_paper(paper_id)
+        return UnifiedResponse(data=PaperRead.model_validate(paper))
+    except NotFoundError as e:
+        return UnifiedResponse(code=404, message=e.message)
 
 
 @router.get("/{paper_id}/detail")
@@ -110,8 +114,11 @@ async def review_paper(
 ):
     """审核试卷."""
     service = PaperService(db)
-    await service.review_paper(paper_id, data.status)
-    return UnifiedResponse(message="审核完成")
+    try:
+        await service.review_paper(paper_id, data.status)
+        return UnifiedResponse(message="审核完成")
+    except NotFoundError as e:
+        return UnifiedResponse(code=404, message=e.message)
 
 
 @router.delete("/{paper_id}")

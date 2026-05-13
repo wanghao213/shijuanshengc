@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.dependencies import get_db
 from app.schemas.common import UnifiedResponse
 from app.schemas.template import TemplateCreate, TemplateRead, TemplateUpdate
@@ -33,8 +34,11 @@ async def get_template(
 ):
     """获取模板详情."""
     service = TemplateService(db)
-    template = await service.get_template(template_id)
-    return UnifiedResponse(data=TemplateRead.model_validate(template))
+    try:
+        template = await service.get_template(template_id)
+        return UnifiedResponse(data=TemplateRead.model_validate(template))
+    except NotFoundError as e:
+        return UnifiedResponse(code=404, message=e.message)
 
 
 @router.post("/")
@@ -56,8 +60,11 @@ async def update_template(
 ):
     """更新模板."""
     service = TemplateService(db)
-    template = await service.update_template(template_id, data)
-    return UnifiedResponse(data=TemplateRead.model_validate(template))
+    try:
+        template = await service.update_template(template_id, data)
+        return UnifiedResponse(data=TemplateRead.model_validate(template))
+    except NotFoundError as e:
+        return UnifiedResponse(code=404, message=e.message)
 
 
 @router.delete("/{template_id}")
