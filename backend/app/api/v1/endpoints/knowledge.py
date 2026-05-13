@@ -34,7 +34,19 @@ async def get_subtree(
 ):
     """获取指定节点及其子树."""
     service = KnowledgeService(db)
-    node = await service.get_node(node_id)
+    
+    # Eager-load the node with its children
+    stmt = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.id == node_id)
+        .options(selectinload(KnowledgeNode.children))
+    )
+    result = await db.execute(stmt)
+    node = result.scalar_one_or_none()
+    
+    if node is None:
+        from app.exceptions import NotFoundError
+        raise NotFoundError("知识点节点不存在")
 
     # Eager-load children with their own children in a single query
     stmt = (
