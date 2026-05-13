@@ -1,121 +1,43 @@
 ```
-# Dependencies
-node_modules/
+# Compiled Python files
+*.pyc
+__pycache__/
 
-# Build outputs
-dist/
-build/
-.next/
-.nuxt/
-out/
+# Database files
+*.db
+test.db
 
-# Logs
-*.log
-
-# Environment variables
+# Environment files
 .env
 .env.local
 *.env.*
 
-# IDE files
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Build artifacts
+dist/
+build/
+target/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editor/IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
+# Coverage reports
 .coverage
+coverage/
 htmlcov/
-.coverage.*
-.pytest_cache/
-.mypy_cache/
-
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # OS generated files
 .DS_Store
 Thumbs.db
-
-# Compression files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# Temporary folders
-tmp/
-temp/
-
-# Compiled JavaScript (if using TypeScript/Babel)
-lib/
-esm/
-cjs/
-
-# Rust/Cargo (if applicable)
-target/
-
-# Java/Maven/Gradle (if applicable)
-target/
-.gradle/
-*.class
-*.jar
-*.war
-
-# Go (if applicable)
-*.exe
-*.dll
-*.so
-*.dylib
-*.a
-*.o
-
-# C/C++ (if applicable)
-*.exe
-*.dll
-*.so
-*.dylib
-*.a
-*.o
-*.out
-*.obj
-
-# .NET (if applicable)
-bin/
-obj/
-*.exe
-*.dll
-*.pdb
-*.nupkg
-[Test]*.dll
 ```
